@@ -1,0 +1,63 @@
+let
+    Source = Csv.Document(File.Contents("C:\Users\user\Downloads\Dataset_Mentah_Logistik_1000_Baris.csv"),[Delimiter=",", Columns=10, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Column1", type text}, {"Column2", type text}, {"Column3", type text}, {"Column4", type text}, {"Column5", type text}, {"Column6", type text}, {"Column7", type text}, {"Column8", type text}, {"Column9", type text}, {"Column10", type text}}),
+    #"Promoted Headers" = Table.PromoteHeaders(#"Changed Type", [PromoteAllScalars=true]),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Promoted Headers",{{"Txn_ID", type text}, {"Item_Code", type text}, {"Item_Description", type text}, {"Category", type text}, {"Inbound_Qty", type text}, {"Unit_Price_IDR", type text}, {"Supplier_Name", type text}, {"Receipt_Date", type text}, {"Warehouse_Zone", type text}, {"Status", type text}}),
+    #"Uppercased Text" = Table.TransformColumns(#"Changed Type1",{{"Txn_ID", Text.Upper, type text}, {"Item_Code", Text.Upper, type text}}),
+    #"Trimmed Text" = Table.TransformColumns(#"Uppercased Text",{{"Txn_ID", Text.Trim, type text}, {"Item_Code", Text.Trim, type text}}),
+    #"Cleaned Text" = Table.TransformColumns(#"Trimmed Text",{{"Txn_ID", Text.Clean, type text}, {"Item_Code", Text.Clean, type text}}),
+    #"Replaced Value" = Table.ReplaceValue(#"Cleaned Text","O","0",Replacer.ReplaceText,{"Item_Code"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","I","1",Replacer.ReplaceText,{"Item_Code"}),
+    #"Uppercased Text1" = Table.TransformColumns(#"Replaced Value1",{{"Warehouse_Zone", Text.Upper, type text}, {"Category", Text.Upper, type text}}),
+    #"Trimmed Text1" = Table.TransformColumns(#"Uppercased Text1",{{"Warehouse_Zone", Text.Trim, type text}, {"Category", Text.Trim, type text}}),
+    #"Replaced Value2" = Table.ReplaceValue(#"Trimmed Text1","VALVES","VALVE",Replacer.ReplaceText,{"Category", "Warehouse_Zone"}),
+    #"Replaced Value3" = Table.ReplaceValue(#"Replaced Value2","_","-",Replacer.ReplaceText,{"Category", "Warehouse_Zone"}),
+    #"Replaced Value4" = Table.ReplaceValue(#"Replaced Value3","FLANGES","FLANGE",Replacer.ReplaceText,{"Category", "Warehouse_Zone"}),
+    #"Replaced Value5" = Table.ReplaceValue(#"Replaced Value4","Rp ","",Replacer.ReplaceText,{"Unit_Price_IDR"}),
+    #"Replaced Value6" = Table.ReplaceValue(#"Replaced Value5",".","",Replacer.ReplaceText,{"Unit_Price_IDR"}),
+    #"Duplicated Column" = Table.DuplicateColumn(#"Replaced Value6", "Unit_Price_IDR", "Unit_Price_IDR - Copy"),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Duplicated Column",{{"Unit_Price_IDR", Int64.Type}}),
+    #"Trimmed Text2" = Table.TransformColumns(#"Changed Type2",{{"Status", Text.Trim, type text}}),
+    #"Uppercased Text2" = Table.TransformColumns(#"Trimmed Text2",{{"Status", Text.Upper, type text}}),
+    #"Replaced Value7" = Table.ReplaceValue(#"Uppercased Text2","RECEIVED","DITERIMA",Replacer.ReplaceText,{"Status"}),
+    #"Replaced Value8" = Table.ReplaceValue(#"Replaced Value7","REJECTED","DITOLAK",Replacer.ReplaceText,{"Status"}),
+    #"Uppercased Text3" = Table.TransformColumns(#"Replaced Value8",{{"Supplier_Name", Text.Upper, type text}}),
+    #"Replaced Value9" = Table.ReplaceValue(#"Uppercased Text3",".","",Replacer.ReplaceText,{"Supplier_Name"}),
+    #"Added Custom" = Table.AddColumn(#"Replaced Value9", "Custom", each let
+Unit_Price_Clear = try Number.From ([Unit_Price_IDR]) otherwise null
+in
+if Unit_Price_Clear = null then null else Number.Abs(Unit_Price_Clear)),
+    #"Reordered Columns" = Table.ReorderColumns(#"Added Custom",{"Txn_ID", "Item_Code", "Item_Description", "Category", "Inbound_Qty", "Unit_Price_IDR", "Custom", "Supplier_Name", "Receipt_Date", "Warehouse_Zone", "Status"}),
+    #"Renamed Columns" = Table.RenameColumns(#"Reordered Columns",{{"Custom", "Unit_Price_IDR_Clean"}}),
+    #"Added Custom1" = Table.AddColumn(#"Renamed Columns", "Custom", each try Number.From ([Inbound_Qty]) otherwise null),
+    #"Reordered Columns1" = Table.ReorderColumns(#"Added Custom1",{"Txn_ID", "Item_Code", "Item_Description", "Category", "Inbound_Qty", "Custom", "Unit_Price_IDR", "Unit_Price_IDR_Clean", "Supplier_Name", "Receipt_Date", "Warehouse_Zone", "Status"}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Reordered Columns1",{{"Custom", "Qty_Parsed"}}),
+    #"Added Custom2" = Table.AddColumn(#"Renamed Columns1", "Qty_Clean", each if [Qty_Parsed] = null then 0 else Number.Abs ([Qty_Parsed])),
+    #"Reordered Columns2" = Table.ReorderColumns(#"Added Custom2",{"Txn_ID", "Item_Code", "Item_Description", "Category", "Inbound_Qty", "Qty_Parsed", "Qty_Clean", "Unit_Price_IDR", "Unit_Price_IDR_Clean", "Supplier_Name", "Receipt_Date", "Warehouse_Zone", "Status"}),
+    #"Added Custom3" = Table.AddColumn(#"Reordered Columns2", "Receipt_Date_Clean", each try Date.FromText ([Receipt_Date], [Culture="en-US"]) otherwise (try Date.FromText ([Receipt_Date], [Culture="id-ID"]) otherwise null)),
+    #"Reordered Columns3" = Table.ReorderColumns(#"Added Custom3",{"Txn_ID", "Item_Code", "Item_Description", "Category", "Inbound_Qty", "Qty_Parsed", "Qty_Clean", "Unit_Price_IDR", "Unit_Price_IDR_Clean", "Supplier_Name", "Receipt_Date", "Receipt_Date_Clean", "Warehouse_Zone", "Status"}),
+    #"Merged Queries" = Table.NestedJoin(#"Reordered Columns3", {"Txn_ID"}, Temp_Group, {"Txn_ID"}, "Temp_Group", JoinKind.LeftOuter),
+    #"Expanded Temp_Group" = Table.ExpandTableColumn(#"Merged Queries", "Temp_Group", {"ID_Count"}, {"Temp_Group.ID_Count"}),
+    #"Renamed Columns3" = Table.RenameColumns(#"Expanded Temp_Group",{{"Temp_Group.ID_Count", "ID_Count"}}),
+    #"Reordered Columns5" = Table.ReorderColumns(#"Renamed Columns3",{"Txn_ID", "ID_Count", "Item_Code", "Item_Description", "Category", "Inbound_Qty", "Qty_Parsed", "Qty_Clean", "Unit_Price_IDR", "Unit_Price_IDR_Clean", "Supplier_Name", "Unit_Price_IDR - Copy", "Receipt_Date", "Receipt_Date_Clean", "Warehouse_Zone", "Status"}),
+    #"Added Custom4" = Table.AddColumn(#"Reordered Columns5", "Audit_Status", each if [Txn_ID] = null or [Txn_ID] <> null and [ID_Count] >1 or Text.Trim(Text.From ([Txn_ID])) = "" or [Qty_Parsed]  = null or [Receipt_Date_Clean]  = null or [Qty_Parsed] < 0 or [Unit_Price_IDR_Clean] = null then "Cacat/Defect" else "Valid"),
+    #"Filtered Rows" = Table.SelectRows(#"Added Custom4", each ([Audit_Status] = "Cacat/Defect")),
+    #"Changed Type3" = Table.TransformColumnTypes(#"Filtered Rows",{{"Receipt_Date_Clean", type date}}),
+    #"Trimmed Text3" = Table.TransformColumns(#"Changed Type3",{{"Item_Description", Text.Trim, type text}}),
+    #"Added Custom5" = Table.AddColumn(#"Trimmed Text3", "Info_Audit", each let
+ID_Defect = if [Txn_ID] = null or [Txn_ID] <> null and [ID_Count] > 1 or Text.Trim(Text.From([Txn_ID])) = "" then "Txn ID Defect/Duplicates ID;" else "",
+Qty_Defect = if [Qty_Parsed] < 0 or [Qty_Parsed] = null then "Qty Defect;" else "",
+Price_Defect = if [Unit_Price_IDR_Clean] = null then "Unit Price Defect;" else "",
+Date_Defect = if [Receipt_Date_Clean] = null then "Date Defect;" else ""
+
+in
+ID_Defect & Qty_Defect & Price_Defect & Date_Defect),
+    #"Removed Columns" = Table.RemoveColumns(#"Added Custom5",{"Inbound_Qty", "Unit_Price_IDR"}),
+    #"Reordered Columns4" = Table.ReorderColumns(#"Removed Columns",{"Txn_ID", "Item_Code", "Item_Description", "Category", "Qty_Parsed", "Qty_Clean", "Unit_Price_IDR - Copy", "Unit_Price_IDR_Clean", "Supplier_Name", "Receipt_Date", "Receipt_Date_Clean", "Warehouse_Zone", "Status", "Audit_Status", "Info_Audit"}),
+    #"Renamed Columns2" = Table.RenameColumns(#"Reordered Columns4",{{"Unit_Price_IDR - Copy", "Unit_Price_IDR"}}),
+    #"Trimmed Text4" = Table.TransformColumns(#"Renamed Columns2",{{"Item_Description", Text.Trim, type text}}),
+    #"Uppercased Text4" = Table.TransformColumns(#"Trimmed Text4",{{"Item_Description", Text.Upper, type text}}),
+    #"Replaced Value10" = Table.ReplaceValue(#"Uppercased Text4"," SS"," STAINLESS",Replacer.ReplaceText,{"Item_Description"}),
+    #"Trimmed Text5" = Table.TransformColumns(#"Replaced Value10",{{"Supplier_Name", Text.Trim, type text}})
+in
+    #"Trimmed Text5"
